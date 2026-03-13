@@ -163,7 +163,7 @@ impl Debug for SpecialsMap {
 }
 
 #[cfg(feature = "cache")]
-const CACHE_CAPACITY: usize = 64000;
+const CACHE_CAPACITY: usize = 10000;
 #[cfg(feature = "cache")]
 const CACHE_MAX_PIECE_SIZE: usize = 96;
 
