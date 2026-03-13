@@ -162,9 +162,13 @@ impl Debug for SpecialsMap {
     }
 }
 
+#[cfg(feature = "cache")]
+const CACHE_CAPACITY: usize = 64000;
+#[cfg(feature = "cache")]
+const CACHE_MAX_PIECE_SIZE: usize = 96;
+
 /// Kitoken tokenizer.
 /// A fast and versatile tokenizer for language models.
-#[derive(Debug)]
 pub struct Kitoken {
     encoder: Box<dyn Encoder>,
     decoder: Decoder,
@@ -176,6 +180,24 @@ pub struct Kitoken {
 
     config: Configuration,
     meta:   Metadata,
+
+    #[cfg(feature = "cache")]
+    cache: std::sync::Mutex<lru::LruCache<Vec<u8>, Vec<TokenId>>>,
+}
+impl Debug for Kitoken {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut s = f.debug_struct("Kitoken");
+        s.field("encoder", &self.encoder)
+            .field("decoder", &self.decoder)
+            .field("specials", &self.specials)
+            .field("config", &self.config)
+            .field("meta", &self.meta);
+        #[cfg(feature = "cache")]
+        if let Ok(cache) = self.cache.lock() {
+            s.field("cache_len", &cache.len());
+        }
+        s.finish()
+    }
 }
 impl Kitoken {
     /// Creates a tokenizer from the given encoder, specials, scores and config.
@@ -252,6 +274,10 @@ impl Kitoken {
             extract_split,
             config,
             meta,
+            #[cfg(feature = "cache")]
+            cache: std::sync::Mutex::new(lru::LruCache::new(
+                core::num::NonZeroUsize::new(CACHE_CAPACITY).unwrap(),
+            )),
         })
     }
 
@@ -304,7 +330,7 @@ impl Kitoken {
                 posit = text.len();
             }
         }
-        let mut parts = parts.iter().fold(Vec::with_capacity(text.len() / 6), |mut acc, part| {
+        let parts = parts.iter().fold(Vec::with_capacity(text.len() / 6), |mut acc, part| {
             let mut specials = if part.special != Token::INVALID {
                 acc.push(part.clone());
                 return acc;
@@ -357,9 +383,48 @@ impl Kitoken {
             }
             acc
         });
-        let mut result = self.encoder.encode(text, &mut parts)?;
-        self.config.process(&mut result);
-        Ok(result)
+        #[cfg(feature = "cache")]
+        {
+            let mut result = Vec::with_capacity(text.len() / 4);
+            for part in &parts {
+                if part.special != Token::INVALID {
+                    result.push(part.special);
+                } else if let Some(token) = self.encoder.lookup_token(part.text.as_bytes()) {
+                    result.push(token);
+                } else if part.len() > CACHE_MAX_PIECE_SIZE {
+                    self.encoder.encode_piece(part.text.as_bytes(), &mut result)?;
+                } else {
+                    let key: &[u8] = part.text.as_bytes();
+                    let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(cached) = cache.get(key) {
+                        result.extend_from_slice(cached);
+                    } else {
+                        drop(cache);
+                        let start = result.len();
+                        self.encoder.encode_piece(key, &mut result)?;
+                        let tokens = result[start..].to_vec();
+                        self.cache
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .put(key.to_vec(), tokens);
+                    }
+                }
+            }
+            self.config.process(&mut result);
+            Ok(result)
+        }
+        #[cfg(not(feature = "cache"))]
+        {
+            let mut result = self.encoder.encode(text, &mut parts)?;
+            self.config.process(&mut result);
+            Ok(result)
+        }
+    }
+
+    /// Clears the encoding cache.
+    #[cfg(feature = "cache")]
+    pub fn clear_cache(&self) {
+        self.cache.lock().unwrap().clear();
     }
 
     /// Decodes the given sequence of tokens into text.

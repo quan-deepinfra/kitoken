@@ -230,6 +230,10 @@ impl Kitoken {
         })
     }
 
+    pub fn clear_cache(&self) {
+        self.inner.clear_cache();
+    }
+
     #[staticmethod]
     pub fn from_web(url: &str, py: Python<'_>) -> PyResult<Kitoken> {
         Ok(Kitoken {

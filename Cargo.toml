@@ -104,6 +104,9 @@ multiversion = ["dep:multiversion"]
 # Enables fetching definitions from HuggingFace or other URLs
 web = ["std", "dep:reqwest"]
 
+# Enables encoding cache for improved performance on repeated pieces
+cache = ["std", "dep:lru"]
+
 # Enables the use of unstable features
 unstable = []
 
@@ -160,6 +163,9 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"], 
 
 # optional dependencies for the multiversion feature
 multiversion = { version = "0.8", default-features = false, optional = true }
+
+# optional dependencies for the cache feature
+lru = { version = "0.14", default-features = false, optional = true }
 
 # optional dependencies for the web feature
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "system-proxy"], optional = true }

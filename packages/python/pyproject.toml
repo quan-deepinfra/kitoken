@@ -60,8 +60,6 @@ universal = true
 profile = "performance"
 bindings = "pyo3"
 manifest-path = "Cargo.toml"
-strip = true
-include-debuginfo = false
 include = [
     "kitoken.pyi",
 ]

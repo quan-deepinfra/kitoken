@@ -18,7 +18,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 
-kitoken = { path = "../..", default-features = false, features = ["all"] }
+kitoken = { path = "../..", default-features = false, features = ["all", "cache"] }
 
 log = { version = "0.4.29" }
 pyo3 = { version = "0.28.2", features = [

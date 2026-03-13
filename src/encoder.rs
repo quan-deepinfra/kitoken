@@ -6,7 +6,7 @@ use core::borrow::Borrow;
 use core::fmt::Debug;
 use core::ops::Deref;
 
-use crate::{Model, TokenId};
+use crate::{Model, Token, TokenId};
 
 mod bytepair;
 mod unigram;
@@ -57,4 +57,23 @@ pub(crate) trait Encoder: Debug + Send + Sync + 'static {
 
     /// Returns the vocabulary and scores.
     fn model(&self) -> Model;
+
+    /// Looks up a piece in the vocabulary as a single token.
+    /// Returns `Some(token_id)` if the piece maps to exactly one token, `None` otherwise.
+    fn lookup_token(&self, _bytes: &[u8]) -> Option<TokenId> {
+        None
+    }
+
+    /// Encodes a single piece of bytes directly into the result buffer.
+    /// This avoids the overhead of creating TextPart and allocating intermediate Vecs.
+    fn encode_piece(&self, piece: &[u8], result: &mut Vec<TokenId>) -> Result<(), EncodeError> {
+        let text = core::str::from_utf8(piece).unwrap_or("");
+        let mut parts = [TextPart {
+            text:    Cow::Borrowed(text),
+            special: Token::INVALID,
+        }];
+        let tokens = self.encode(text, &mut parts)?;
+        result.extend_from_slice(&tokens);
+        Ok(())
+    }
 }

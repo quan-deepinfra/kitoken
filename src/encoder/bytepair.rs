@@ -105,6 +105,29 @@ impl Encoder for BytePair {
     }
 
     #[inline(always)]
+    fn lookup_token(&self, bytes: &[u8]) -> Option<TokenId> {
+        if self.end_of_word.is_some() {
+            return None;
+        }
+        if bytes.len() <= self.max_token_bytes && bytes.len() >= self.min_token_bytes {
+            self.vocab.get(bytes).copied()
+        } else {
+            None
+        }
+    }
+
+    fn encode_piece(&self, piece: &[u8], result: &mut Vec<TokenId>) -> Result<(), EncodeError> {
+        // Handle end_of_word by creating an extended piece
+        if let Some(end_of_word) = &self.end_of_word {
+            let mut extended = Vec::with_capacity(piece.len() + end_of_word.len());
+            extended.extend_from_slice(piece);
+            extended.extend_from_slice(end_of_word.as_bytes());
+            return self.encode_piece_bytes(&extended, piece.len(), result);
+        }
+        self.encode_piece_bytes(piece, piece.len(), result)
+    }
+
+    #[inline(always)]
     fn model(&self) -> Model {
         let mut vocab = self.vocab.iter().map(|(k, v)| (k.clone(), *v)).collect::<Vec<_>>();
         vocab.sort_by(|(ta, a), (tb, b)| {
@@ -165,6 +188,62 @@ impl BytePair {
             max_token_bytes,
             min_token_bytes,
         })
+    }
+}
+impl BytePair {
+    /// Encodes a single piece of bytes directly into the result buffer.
+    #[inline(never)]
+    fn encode_piece_bytes(
+        &self, piece: &[u8], text_len: usize, result: &mut Vec<TokenId>,
+    ) -> Result<(), EncodeError> {
+        if piece.len() <= self.max_token_bytes && piece.len() >= self.min_token_bytes {
+            if let Some(&token) = self.vocab.get(piece) {
+                result.push(token);
+                return Ok(());
+            }
+        }
+        let mut buffer = Vec::with_capacity(Self::ENCODE_BUFFER_SIZE);
+        let end_of_word_len = piece.len() - text_len;
+        if self.chars {
+            let indices: Vec<_> = piece[..text_len]
+                .char_indices()
+                .map(|(s, _, c)| (s as u32, c.len_utf8() as u32))
+                .collect();
+            if indices.len() > Self::ENCODE_LINEAR_LIMIT {
+                self.encode_pairs_heap(
+                    piece,
+                    &mut buffer,
+                    result,
+                    indices.into_iter(),
+                    &self.fallback,
+                )?;
+            } else {
+                self.encode_pairs(
+                    piece,
+                    &mut buffer,
+                    result,
+                    indices.into_iter().map(|(i, _)| i),
+                    &self.fallback,
+                )?;
+            }
+        } else if piece.len() - end_of_word_len > Self::ENCODE_LINEAR_LIMIT {
+            self.encode_pairs_heap(
+                piece,
+                &mut buffer,
+                result,
+                (0..text_len).map(|i| i as u32).map(|i| (i, 1)),
+                &self.fallback,
+            )?;
+        } else {
+            self.encode_pairs(
+                piece,
+                &mut buffer,
+                result,
+                (0..text_len).map(|i| i as u32),
+                &self.fallback,
+            )?;
+        }
+        Ok(())
     }
 }
 impl BytePair {

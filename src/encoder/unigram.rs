@@ -62,6 +62,25 @@ impl Encoder for Unigram {
         Ok(result)
     }
 
+
+    fn encode_piece(&self, piece: &[u8], result: &mut Vec<TokenId>) -> Result<(), EncodeError> {
+        if piece.len() <= self.max_token_bytes && piece.len() >= self.min_token_bytes {
+            if let Some(token) = self.vocab.get(piece) {
+                result.push(token.id);
+                return Ok(());
+            }
+        }
+        let mut buffer = Vec::with_capacity(Self::ENCODE_BUFFER_SIZE);
+        self.encode_unigram(
+            piece,
+            &mut buffer,
+            result,
+            piece.char_indices().map(|(i, _, _)| i),
+            &self.fallback,
+        )?;
+        Ok(())
+    }
+
     #[inline(always)]
     fn model(&self) -> Model {
         let mut vocab = self.vocab.iter().map(|(k, v)| (k.clone(), *v)).collect::<Vec<_>>();
