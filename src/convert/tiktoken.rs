@@ -183,6 +183,59 @@ pub fn convert_tiktoken(data: impl AsRef<[u8]>) -> Result<Definition, Conversion
                 ("<|endofprompt|>".to_string(), 200018),
             ]);
         }
+        len @ 163584 => {
+            log::debug!("Detected kimi_k25 vocab");
+            // Ref: https://huggingface.co/moonshotai/Kimi-K2.5/blob/main/tokenization_kimi.py
+            config.split.push(Split::Pattern { pattern:
+                Regex::new(&[
+                    r"[\p{Han}]+",
+                    r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+                    r"[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]+[\p{Ll}\p{Lm}\p{Lo}\p{M}&&[^\p{Han}]]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?",
+                    r"\p{N}{1,3}",
+                    r" ?[^\s\p{L}\p{N}]+[\r\n]*",
+                    r"\s*[\r\n]+",
+                    r"\s+(?!\S)",
+                    r"\s+",
+                ].join("|"))?.into(),
+                behavior: SplitBehavior::Isolate
+            });
+            // Named special tokens from tokenizer_config.json added_tokens_decoder
+            let named: &[(u32, &str)] = &[
+                (len as u32,       "[BOS]"),
+                (len as u32 + 1,   "[EOS]"),
+                (len as u32 + 2,   "<|im_end|>"),
+                (len as u32 + 3,   "<|im_user|>"),
+                (len as u32 + 4,   "<|im_assistant|>"),
+                (len as u32 + 6,   "<|start_header_id|>"),
+                (len as u32 + 7,   "<|end_header_id|>"),
+                (len as u32 + 9,   "[EOT]"),
+                (len as u32 + 10,  "<|im_system|>"),
+                (len as u32 + 11,  "<|tool_calls_section_begin|>"),
+                (len as u32 + 12,  "<|tool_calls_section_end|>"),
+                (len as u32 + 13,  "<|tool_call_begin|>"),
+                (len as u32 + 14,  "<|tool_call_argument_begin|>"),
+                (len as u32 + 15,  "<|tool_call_end|>"),
+                (len as u32 + 17,  "<|im_middle|>"),
+                (len as u32 + 18,  "<|media_begin|>"),
+                (len as u32 + 19,  "<|media_content|>"),
+                (len as u32 + 20,  "<|media_end|>"),
+                (len as u32 + 21,  "<|media_pad|>"),
+                (len as u32 + 22,  "<think>"),
+                (len as u32 + 23,  "</think>"),
+                (len as u32 + 254, "[UNK]"),
+                (len as u32 + 255, "[PAD]"),
+            ];
+            // Build all 256 special tokens: named tokens at known positions,
+            // reserved tokens filling gaps, matching HuggingFace fallback names.
+            for offset in 0u32..256 {
+                let id = len as u32 + offset;
+                if let Some(&(_, name)) = named.iter().find(|&&(nid, _)| nid == id) {
+                    specials.push((name.to_string(), id));
+                } else {
+                    specials.push((format!("<|reserved_token_{id}|>"), id));
+                }
+            }
+        }
         100000.. => {
             log::debug!("Detected cl100k vocab");
             config.split.push(Split::Pattern { pattern:
@@ -230,11 +283,11 @@ pub fn convert_tiktoken(data: impl AsRef<[u8]>) -> Result<Definition, Conversion
             bytes:   s.as_bytes().to_vec(),
             kind:    SpecialTokenKind::Control,
             ident:   match s.as_str() {
-                "<|begin_of_text|>" => Some("bos"),
-                "<|end_of_text|>" | "<|endoftext|>" => Some("eos"),
-                "<|eot|>" => Some("eot"),
+                "<|begin_of_text|>" | "[BOS]" => Some("bos"),
+                "<|end_of_text|>" | "<|endoftext|>" | "[EOS]" => Some("eos"),
+                "<|eot|>" | "[EOT]" => Some("eot"),
                 "<|eom|>" => Some("eom"),
-                "<|finetune_right_pad|>" => Some("pad"),
+                "<|finetune_right_pad|>" | "[PAD]" => Some("pad"),
                 _ => None,
             }
             .map(|s| s.to_string()),
@@ -243,6 +296,9 @@ pub fn convert_tiktoken(data: impl AsRef<[u8]>) -> Result<Definition, Conversion
         })
         .collect::<SpecialVocab>();
     specials.sort();
+    if let Some(unk) = specials.iter_mut().find(|s| s.bytes == b"[UNK]") {
+        unk.kind = SpecialTokenKind::Unknown;
+    }
 
     let model = Model::BytePair {
         vocab,
