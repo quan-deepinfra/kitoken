@@ -163,7 +163,7 @@ impl Debug for SpecialsMap {
 }
 
 #[cfg(feature = "cache")]
-const CACHE_CAPACITY: usize = 40000;
+const CACHE_CAPACITY: usize = 60000;
 #[cfg(feature = "cache")]
 const CACHE_MAX_PIECE_SIZE: usize = 64;
 
@@ -425,6 +425,30 @@ impl Kitoken {
     #[cfg(feature = "cache")]
     pub fn clear_cache(&self) {
         self.cache.lock().unwrap().clear();
+    }
+
+    /// Returns the approximate memory usage of the encoding cache in bytes.
+    ///
+    /// Includes per-entry overhead for the LRU linked list nodes and hash map buckets.
+    #[cfg(feature = "cache")]
+    pub fn cache_memory_usage(&self) -> usize {
+        // Per-entry overhead: LRU doubly-linked list node pointers (2 * 8 bytes),
+        // hash map entry (key hash 8 + pointer 8 + padding ~8), Vec headers (3 * 8 each for
+        // ptr/len/cap on both key and value), plus allocator overhead (~16 bytes per Vec alloc).
+        const PER_ENTRY_OVERHEAD: usize = 128;
+        let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .iter()
+            .map(|(k, v)| {
+                PER_ENTRY_OVERHEAD + k.len() + v.len() * core::mem::size_of::<TokenId>()
+            })
+            .sum()
+    }
+
+    /// Returns the number of entries in the encoding cache.
+    #[cfg(feature = "cache")]
+    pub fn cache_len(&self) -> usize {
+        self.cache.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Decodes the given sequence of tokens into text.

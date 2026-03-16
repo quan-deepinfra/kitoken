@@ -234,6 +234,16 @@ impl Kitoken {
         self.inner.clear_cache();
     }
 
+    /// Returns the approximate memory usage of the encoding cache in megabytes.
+    pub fn cache_memory_usage_mb(&self) -> f64 {
+        self.inner.cache_memory_usage() as f64 / (1024.0 * 1024.0)
+    }
+
+    /// Returns the number of entries in the encoding cache.
+    pub fn cache_len(&self) -> usize {
+        self.inner.cache_len()
+    }
+
     #[staticmethod]
     pub fn from_web(url: &str, py: Python<'_>) -> PyResult<Kitoken> {
         Ok(Kitoken {
