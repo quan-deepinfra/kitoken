@@ -163,9 +163,9 @@ impl Debug for SpecialsMap {
 }
 
 #[cfg(feature = "cache")]
-const CACHE_CAPACITY: usize = 30000;
+const CACHE_CAPACITY: usize = 40000;
 #[cfg(feature = "cache")]
-const CACHE_MAX_PIECE_SIZE: usize = 50;
+const CACHE_MAX_PIECE_SIZE: usize = 64;
 
 /// Kitoken tokenizer.
 /// A fast and versatile tokenizer for language models.
