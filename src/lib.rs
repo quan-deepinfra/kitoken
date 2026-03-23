@@ -330,7 +330,7 @@ impl Kitoken {
                 posit = text.len();
             }
         }
-        let parts = parts.iter().fold(Vec::with_capacity(text.len() / 6), |mut acc, part| {
+        let mut parts = parts.iter().fold(Vec::with_capacity(text.len() / 6), |mut acc, part| {
             let mut specials = if part.special != Token::INVALID {
                 acc.push(part.clone());
                 return acc;
